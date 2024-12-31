@@ -1,0 +1,189 @@
+# Libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+from tqdm import tqdm
+import os
+
+import kagglehub
+
+# Download latest version
+path = kagglehub.dataset_download("camnugent/california-housing-prices")
+
+print("Path to dataset files:", path)
+
+import os
+
+# List files in the directory
+directory = '/root/.cache/kagglehub/datasets/camnugent/california-housing-prices/versions/1'
+print(os.listdir(directory))
+
+# Load the dataset
+housing_data = pd.read_csv('/root/.cache/kagglehub/datasets/camnugent/california-housing-prices/versions/1/housing.csv')
+
+# Display the first few rows of the dataset
+print(housing_data.head())
+
+# Basic information about the dataset
+print(housing_data.info())
+
+# Summary statistics of the dataset
+print(housing_data.describe())
+
+# Check for missing values
+print(housing_data.isnull().sum())
+
+# Separate numerical and categorical columns
+numerical_cols = housing_data.select_dtypes(include=['float64', 'int64']).columns
+categorical_cols = housing_data.select_dtypes(include=['object']).columns
+
+# Impute missing values for numerical columns with mean
+imputer_num = SimpleImputer(strategy='mean')
+housing_data[numerical_cols] = imputer_num.fit_transform(housing_data[numerical_cols])
+
+# Impute missing values for categorical columns with most frequent
+imputer_cat = SimpleImputer(strategy='most_frequent')
+housing_data[categorical_cols] = imputer_cat.fit_transform(housing_data[categorical_cols])
+
+# Verify that there are no more missing values
+print(housing_data.isnull().sum())
+
+# Feature Engineering: Creating new features
+housing_data['rooms_per_household'] = housing_data['total_rooms'] / housing_data['households']
+housing_data['bedrooms_per_room'] = housing_data['total_bedrooms'] / housing_data['total_rooms']
+housing_data['population_per_household'] = housing_data['population'] / housing_data['households']
+
+# Display the first few rows to see the new features
+print(housing_data.head())
+
+# Split the data into features (X) and target variable (y)
+X = housing_data.drop('median_house_value', axis=1)
+y = housing_data['median_house_value']
+
+# Convert categorical data into dummy variables
+X = pd.get_dummies(X, drop_first=True)
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Standardize the features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Define models and parameter distributions
+models = {
+    'Linear Regression': LinearRegression(),
+    'Random Forest': RandomForestRegressor(random_state=42),
+    'Gradient Boosting': GradientBoostingRegressor(random_state=42)
+}
+
+param_distributions = {
+    'Linear Regression': {},
+    'Random Forest': {
+        'n_estimators': [100, 200],
+        'max_depth': [10, 20],
+        'min_samples_split': [2, 5],
+        'min_samples_leaf': [1, 2]
+    },
+    'Gradient Boosting': {
+        'n_estimators': [100, 200],
+        'learning_rate': [0.1, 0.05],
+        'max_depth': [3, 4],
+        'subsample': [0.8, 1.0]
+    }
+}
+
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from tqdm import tqdm
+
+# Define models and parameter distributions
+models = {
+    'Linear Regression': LinearRegression(),
+    'Random Forest': RandomForestRegressor(random_state=42),
+    'Gradient Boosting': GradientBoostingRegressor(random_state=42)
+}
+
+param_distributions = {
+    'Linear Regression': {},
+    'Random Forest': {
+        'n_estimators': [100, 200],
+        'max_depth': [10, 20],
+        'min_samples_split': [2, 5],
+        'min_samples_leaf': [1, 2]
+    },
+    'Gradient Boosting': {
+        'n_estimators': [100, 200],
+        'learning_rate': [0.1, 0.05],
+        'max_depth': [3, 4],
+        'subsample': [0.8, 1.0]
+    }
+}
+
+# Check if models is defined
+print(f'models: {globals().get("models", "Not Found")}')
+
+best_model = None
+best_score = float('inf')  # initialize with infinity because we are dealing with negative MSE
+
+for name, model in models.items():
+    print(f"\nTraining and optimizing {name} model...")
+    randomized_search = RandomizedSearchCV(model, param_distributions[name], n_iter=10, cv=3, scoring='neg_mean_squared_error', verbose=0, random_state=42, n_jobs=-1)
+
+    # Use tqdm to show progress
+    for _ in tqdm(range(1), desc=f"Optimizing {name}"):
+        randomized_search.fit(X_train_scaled, y_train)
+
+    # Update the best model if the current model is better
+    if randomized_search.best_score_ < best_score:
+        best_score = randomized_search.best_score_
+        best_model = randomized_search.best_estimator_
+
+    print(f"{name} Best Parameters:", randomized_search.best_params_)
+
+print(f"\nBest model: {type(best_model).__name__}")
+
+# Check if best_model is None before evaluation
+if best_model is not None:
+    # Evaluate the best model
+    y_pred = best_model.predict(X_test_scaled)
+    mse = mean_squared_error(y_test, y_pred)
+    rmse = np.sqrt(mse)
+    r2 = r2_score(y_test, y_pred)
+
+    print(f"MSE: {mse}")
+    print(f"RMSE: {rmse}")
+    print(f"R-squared: {r2}")
+
+    # Data Visualization (Model Performance)
+    plt.figure(figsize=(10, 6))
+    sns.regplot(x=y_test, y=y_pred, scatter_kws={'color': 'red'}, line_kws={'color': 'blue'})
+    plt.xlabel("Actual Median House Values")
+    plt.ylabel("Predicted Median House Values")
+    plt.title("Actual vs. Predicted Median House Values")
+    plt.show()
+
+    # Visualize feature importance (For tree-based models)
+    if isinstance(best_model, (RandomForestRegressor, GradientBoostingRegressor)):
+        feature_importances = best_model.feature_importances_
+        features = X.columns
+        indices = np.argsort(feature_importances)[::-1]
+
+        plt.figure(figsize=(12, 8))
+        plt.title("Feature Importance")
+        plt.bar(range(len(features)), feature_importances[indices], align="center")
+        plt.xticks(range(len(features)), features[indices], rotation=90)
+        plt.xlim([-1, len(features)])
+        plt.show()
+else:
+    print("No best model was found.")
+
